@@ -1,0 +1,1052 @@
+{
+  "name": "DefensX - URL Group Block Alerts to SuperOps",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "id": "6b48c160-8b9e-4455-a96e-9bc4a2b65342",
+      "name": "Every 5 Minutes",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        1712,
+        1584
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "972ef216-1f12-4593-8dd6-95bbf613234e",
+      "name": "Manual Test",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        1712,
+        1792
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "d0f17937-968c-4750-97ee-41a79ca004ac",
+              "name": "defensxBaseUrl",
+              "value": "https://cloud.defensx.com/api/partner/v1",
+              "type": "string"
+            },
+            {
+              "id": "dec13fc3-38e5-4cf0-82a3-1861428009b7",
+              "name": "urlGroupName",
+              "value": "CHANGE_ME",
+              "type": "string"
+            },
+            {
+              "id": "3e9660f4-0de3-4119-9d81-798d5a8c4eaf",
+              "name": "groupOwnerCustomerId",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "57804f8d-b913-4f7c-86a4-2023e9f27b14",
+              "name": "firstRunLookbackMinutes",
+              "value": 20,
+              "type": "number"
+            },
+            {
+              "id": "04fcaf0f-b265-481c-9305-a6674f3759d9",
+              "name": "overlapMinutes",
+              "value": 5,
+              "type": "number"
+            },
+            {
+              "id": "7d6be405-71a2-45a8-8284-efc122487cb9",
+              "name": "maxLookbackHours",
+              "value": 24,
+              "type": "number"
+            },
+            {
+              "id": "e3131d76-0ed5-4479-8aaa-e2291a3363e9",
+              "name": "suppressHours",
+              "value": 24,
+              "type": "number"
+            },
+            {
+              "id": "ed17e6fa-0f98-4673-a02b-37873b0dc04d",
+              "name": "includeConsented",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "8c8ffdad-1925-4f17-96b2-8e1ceb6809e7",
+              "name": "defangUrls",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "40eab6a9-95a6-4a31-9cd7-ce4fc8ed8821",
+              "name": "superopsSubdomain",
+              "value": "CHANGE_ME",
+              "type": "string"
+            },
+            {
+              "id": "422030a8-8960-46fa-b104-d3f2a43445e5",
+              "name": "fallbackSuperOpsAccountId",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "2a92fe7b-fe69-4acb-b99e-c941d1620670",
+              "name": "ticketRequestType",
+              "value": "CHANGE_ME",
+              "type": "string"
+            },
+            {
+              "id": "6637ebc4-05fc-4c22-9731-9aa90f4e4c49",
+              "name": "customerNameMap",
+              "value": "{}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "d07c4c94-fe53-40c1-bbc5-b93c75ed89e6",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1936,
+        1696
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.defensxBaseUrl }}/customers/self",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {}
+      },
+      "id": "c09cf16b-9a14-465f-850e-e6706cb0f447",
+      "name": "Get Partner Self Customer",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        1696
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "DefensX API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.defensxBaseUrl }}/customers/{{ $('Config').first().json.groupOwnerCustomerId || $json.id }}/custom_url_groups",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {}
+      },
+      "id": "2660aa65-df45-48ea-837e-6ebd93bee08b",
+      "name": "Get URL Groups",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2384,
+        1696
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "DefensX API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Finds the watched URL group by name (case-insensitive) on the owning customer.\nconst cfg = $('Config').first().json;\nconst ownerId = cfg.groupOwnerCustomerId || $('Get Partner Self Customer').first().json.id;\nconst want = String(cfg.urlGroupName || '').trim().toLowerCase();\n\nif (!want || want === 'change_me') {\n  throw new Error('Config.urlGroupName is not set. Enter the exact name of the DefensX URL group to watch.');\n}\nif (!ownerId) {\n  throw new Error('Could not resolve the customer that owns the URL group (GET /customers/self returned no id).');\n}\n\nconst groups = $input.all().map(i => i.json).filter(g => g && g.id !== undefined && g.name);\nconst matches = groups.filter(g => String(g.name).trim().toLowerCase() === want);\n\nif (matches.length !== 1) {\n  const names = groups.map(g => `\"${g.name}\" (id ${g.id}, public=${g.public})`).join(', ') || 'none returned';\n  throw new Error(\n    `Expected exactly 1 URL group named \"${cfg.urlGroupName}\" on customer ${ownerId}, found ${matches.length}. ` +\n    `Groups available there: ${names}. If the group lives on a different customer, set Config.groupOwnerCustomerId.`\n  );\n}\n\nconst g = matches[0];\nreturn [{\n  json: {\n    ownerCustomerId: ownerId,\n    groupId: g.id,\n    groupName: g.name,\n    configType: g.config_type ?? null,\n    isPublic: g.public ?? null,\n  },\n}];\n"
+      },
+      "id": "44e3e29b-a1a0-4c5f-b6f1-fa91ada4295e",
+      "name": "Resolve URL Group",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2592,
+        1696
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.defensxBaseUrl }}/customers/{{ $json.ownerCustomerId }}/custom_url_groups/{{ $json.groupId }}/custom_urls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {}
+      },
+      "id": "e1f8a768-d210-4c5d-a685-921f8738bd69",
+      "name": "Get Group URLs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2816,
+        1696
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "DefensX API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Turns the group's entries into matchers and stamps the end of this run's log window.\nconst group = $('Resolve URL Group').first().json;\n\nfunction parseEntry(value) {\n  let s = String(value ?? '').trim().toLowerCase();\n  if (!s) return null;\n  s = s.replace(/^[a-z][a-z0-9+.-]*:\\/\\//, '').replace(/[?#].*$/, '');\n  const slash = s.indexOf('/');\n  let host = slash === -1 ? s : s.slice(0, slash);\n  const path = slash === -1 ? '' : s.slice(slash).replace(/\\/+$/, '');\n  host = host.replace(/^[^@]*@/, '').replace(/:\\d+$/, '').replace(/\\.$/, '');\n  let wildcard = false;\n  if (host.startsWith('*.')) { wildcard = true; host = host.slice(2); }\n  host = host.replace(/^www\\./, '');\n  if (!host) return null;\n  return { host, wildcard, path, raw: String(value) };\n}\n\nconst entries = $input.all()\n  .map(i => i.json)\n  .filter(e => e && e.value)\n  .map(e => parseEntry(e.value))\n  .filter(Boolean);\n\nif (entries.length === 0) {\n  throw new Error(`URL group \"${group.groupName}\" (id ${group.groupId}) returned no entries, so nothing can match.`);\n}\n\nreturn [{\n  json: {\n    ...group,\n    entryCount: entries.length,\n    entries,\n    runEndIso: new Date().toISOString(),\n  },\n}];\n"
+      },
+      "id": "00ef1d82-76fb-4cf1-9f7e-e230aa555f87",
+      "name": "Build Run Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        1696
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.defensxBaseUrl }}/customers",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {}
+      },
+      "id": "7bbbc4ea-1478-4741-82dc-eaa67ac45d47",
+      "name": "Get Customers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3264,
+        1696
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "alwaysOutputData": true,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "DefensX API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// One item per enabled customer (plus the partner's own \"self\" customer) with its log window.\n// Each customer keeps its own cursor in workflow static data so a failed customer is retried\n// from where it left off instead of losing that window.\nconst cfg = $('Config').first().json;\nconst ctx = $('Build Run Context').first().json;\nconst self = $('Get Partner Self Customer').first().json;\nconst cursors = $getWorkflowStaticData('global').cursors || {};\n\nconst overlapMs = Number(cfg.overlapMinutes ?? 5) * 60000;\nconst firstRunMs = Number(cfg.firstRunLookbackMinutes ?? 20) * 60000;\nconst maxLookbackMs = Number(cfg.maxLookbackHours ?? 24) * 3600000;\nconst endMs = Date.parse(ctx.runEndIso);\n\nconst seen = new Set();\nconst out = [];\nfor (const c of [...$input.all().map(i => i.json), self]) {\n  if (!c || !c.id || seen.has(c.id)) continue;\n  seen.add(c.id);\n  if (c.enabled === false) continue;\n\n  const cursorMs = Date.parse(cursors[c.id] || '');\n  const startMs = Number.isFinite(cursorMs)\n    ? Math.max(cursorMs - overlapMs, endMs - maxLookbackMs)\n    : endMs - firstRunMs;\n\n  out.push({\n    json: {\n      customerId: c.id,\n      customerName: c.name || c.id,\n      startIso: new Date(startMs).toISOString(),\n      endIso: ctx.runEndIso,\n    },\n  });\n}\n\nif (out.length === 0) throw new Error('GET /customers returned no enabled customers.');\nreturn out;\n"
+      },
+      "id": "1f4b468d-6b4c-4a1d-9770-412a99e3e7a8",
+      "name": "Build Customer List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3472,
+        1696
+      ]
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "id": "8930a15d-5967-48b5-bc16-ece1733a1229",
+      "name": "Loop Over Customers",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        1936,
+        2016
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.defensxBaseUrl }}/customers/{{ $json.customerId }}/logs/urls",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "start_date",
+              "value": "={{ $json.startIso }}"
+            },
+            {
+              "name": "end_date",
+              "value": "={{ $json.endIso }}"
+            },
+            {
+              "name": "limit",
+              "value": "5000"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "parameters": {
+                "parameters": [
+                  {
+                    "name": "page",
+                    "value": "={{ $pageCount + 1 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.totalPages !== undefined ? ($response.body.page ?? 1) >= $response.body.totalPages : ($response.body.items ?? []).length === 0 }}",
+              "limitPagesFetched": true,
+              "maxRequests": 40
+            }
+          }
+        }
+      },
+      "id": "ba8e5e25-b753-4e9d-bebd-02db92697b94",
+      "name": "Get URL Logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        2128
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "DefensX API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Flattens every page of URL logs for the current customer and keeps only blocked rows.\nconst cfg = $('Config').first().json;\nconst cust = $('Loop Over Customers').first().json;\nconst includeConsented = cfg.includeConsented !== false;\n\nconst rows = [];\nconst actionCounts = {};\nlet scanned = 0;\nlet error = null;\n\nfor (const item of $input.all()) {\n  const body = item.json || {};\n  if (body.error) {\n    error = typeof body.error === 'string' ? body.error : (body.error.message || JSON.stringify(body.error));\n    continue;\n  }\n  for (const r of body.items || []) {\n    scanned++;\n    const key = `${r.action ?? ''}|${r.sub_type ?? ''}`;\n    actionCounts[key] = (actionCounts[key] || 0) + 1;\n\n    const consented = r.sub_type === 'url_block_consented';\n    if (consented && !includeConsented) continue;\n    if (!consented && !/block/i.test(String(r.action ?? ''))) continue;\n\n    rows.push({\n      t: r.created_at,\n      userId: r.user_id ?? null,\n      agentId: r.agent_id ?? null,\n      target: r.url,\n      action: r.action ?? null,\n      consented,\n      categoryKey: r.category_key ?? null,\n      riskScore: r.risk_score ?? null,\n      src: 'url',\n    });\n  }\n}\n\nreturn [{ json: { ...cust, urlScanned: scanned, urlActionCounts: actionCounts, urlError: error, urlRows: rows } }];\n"
+      },
+      "id": "676d9e09-7520-4d90-a24d-60d73ac00a24",
+      "name": "Collect URL Logs",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2384,
+        2128
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.defensxBaseUrl }}/customers/{{ $json.customerId }}/logs/dns",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "start_date",
+              "value": "={{ $json.startIso }}"
+            },
+            {
+              "name": "end_date",
+              "value": "={{ $json.endIso }}"
+            },
+            {
+              "name": "limit",
+              "value": "5000"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "parameters": {
+                "parameters": [
+                  {
+                    "name": "page",
+                    "value": "={{ $pageCount + 1 }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.totalPages !== undefined ? ($response.body.page ?? 1) >= $response.body.totalPages : ($response.body.items ?? []).length === 0 }}",
+              "limitPagesFetched": true,
+              "maxRequests": 40
+            }
+          }
+        }
+      },
+      "id": "db854513-d107-4aa9-9a2f-65a067e2ce8e",
+      "name": "Get DNS Logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2592,
+        2128
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "DefensX API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Adds DNS-level blocks, keeps only rows whose host/URL is in the watched group,\n// and rolls them up to one hit per user + hostname. Always returns exactly one item\n// so the loop's \"done\" output carries a result for every customer.\nconst ctx = $('Build Run Context').first().json;\nconst base = $('Collect URL Logs').first().json;\n\nfunction parseTarget(value) {\n  let s = String(value ?? '').trim().toLowerCase();\n  if (!s) return null;\n  s = s.replace(/^[a-z][a-z0-9+.-]*:\\/\\//, '').replace(/[?#].*$/, '');\n  const slash = s.indexOf('/');\n  let host = slash === -1 ? s : s.slice(0, slash);\n  const path = slash === -1 ? '' : s.slice(slash).replace(/\\/+$/, '');\n  host = host.replace(/^[^@]*@/, '').replace(/:\\d+$/, '').replace(/\\.$/, '').replace(/^www\\./, '');\n  return host ? { host, path } : null;\n}\n\nfunction findEntry(target, hasPath) {\n  for (const e of ctx.entries) {\n    const hostOk = e.wildcard\n      ? (target.host === e.host || target.host.endsWith('.' + e.host))\n      : target.host === e.host;\n    if (!hostOk) continue;\n    if (!e.path) return e;\n    // Path-scoped entries can only be confirmed against URL logs, not DNS lookups.\n    if (hasPath && (target.path === e.path || target.path.startsWith(e.path + '/'))) return e;\n  }\n  return null;\n}\n\nconst dnsRows = [];\nlet dnsScanned = 0;\nlet dnsError = null;\nfor (const item of $input.all()) {\n  const body = item.json || {};\n  if (body.error) {\n    dnsError = typeof body.error === 'string' ? body.error : (body.error.message || JSON.stringify(body.error));\n    continue;\n  }\n  for (const r of body.items || []) {\n    dnsScanned++;\n    // DNS logs only record non-allowed lookups; drop anything explicitly allowed.\n    if (/allow|no_action/i.test(String(r.action ?? ''))) continue;\n    dnsRows.push({\n      t: r.created_at,\n      userId: r.user_id ?? null,\n      agentId: r.agent_id ?? null,\n      target: r.hostname,\n      action: r.action ?? null,\n      consented: false,\n      categoryKey: r.category_key ?? null,\n      riskScore: r.risk_score ?? null,\n      src: 'dns',\n    });\n  }\n}\n\nconst byKey = new Map();\nfor (const row of [...(base.urlRows || []), ...dnsRows]) {\n  const target = parseTarget(row.target);\n  if (!target) continue;\n  const entry = findEntry(target, row.src === 'url');\n  if (!entry) continue;\n\n  const key = `${row.userId || 'unknown'}|${target.host}`;\n  let hit = byKey.get(key);\n  if (!hit) {\n    hit = {\n      userId: row.userId,\n      agentId: row.agentId,\n      hostname: target.host,\n      sampleUrl: target.host + target.path, // query string/fragment deliberately dropped\n      matchedEntry: entry.raw,\n      count: 0,\n      firstSeen: row.t,\n      lastSeen: row.t,\n      sources: [],\n      consented: false,\n      action: row.action,\n      categoryKey: row.categoryKey,\n      riskScore: row.riskScore,\n    };\n    byKey.set(key, hit);\n  }\n  hit.count++;\n  if (row.t && (!hit.firstSeen || row.t < hit.firstSeen)) hit.firstSeen = row.t;\n  if (row.t && (!hit.lastSeen || row.t > hit.lastSeen)) hit.lastSeen = row.t;\n  if (!hit.sources.includes(row.src)) hit.sources.push(row.src);\n  if (row.consented) hit.consented = true;\n  if (!hit.agentId && row.agentId) hit.agentId = row.agentId;\n}\n\nreturn [{\n  json: {\n    customerId: base.customerId,\n    customerName: base.customerName,\n    startIso: base.startIso,\n    endIso: base.endIso,\n    ok: !base.urlError,          // URL logs are the primary source; DNS failure is only a warning\n    urlError: base.urlError,\n    dnsWarning: dnsError,\n    urlScanned: base.urlScanned,\n    dnsScanned,\n    urlActionCounts: base.urlActionCounts,\n    hits: [...byKey.values()],\n  },\n}];\n"
+      },
+      "id": "2fa4f96b-1afa-4638-9b8f-54b1d6606a22",
+      "name": "Match Blocked Hits",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2816,
+        2128
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Runs once after the loop. Drops user+hostname pairs already ticketed inside the\n// suppression window, advances the cursor for customers with nothing to report,\n// and passes on only customers that need a ticket.\nconst cfg = $('Config').first().json;\nconst sd = $getWorkflowStaticData('global');\nconst cursors = { ...(sd.cursors || {}) };\nconst notified = { ...(sd.notified || {}) };\n\nconst now = Date.now();\nconst suppressMs = Math.max(Number(cfg.suppressHours ?? 24), 1) * 3600000;\nfor (const k of Object.keys(notified)) {\n  if (now - notified[k] >= suppressMs) delete notified[k];\n}\n\nconst out = [];\nconst failures = [];\nlet okCount = 0;\n\nfor (const item of $input.all()) {\n  const r = item.json;\n  if (!r || !r.customerId) continue;\n  if (!r.ok) {\n    failures.push(`${r.customerName}: ${r.urlError}`);\n    continue; // cursor not advanced -> this window is retried next run\n  }\n  okCount++;\n\n  const fresh = (r.hits || []).filter(h => !notified[`${r.customerId}|${h.userId || 'unknown'}|${h.hostname}`]);\n  if (fresh.length === 0) {\n    cursors[r.customerId] = r.endIso;\n    continue;\n  }\n  out.push({ json: { ...r, hits: fresh, suppressedCount: (r.hits || []).length - fresh.length } });\n}\n\nsd.cursors = cursors;\nsd.notified = notified;\n\nif (okCount === 0 && failures.length > 0) {\n  throw new Error(`DefensX URL log fetch failed for every customer (${failures.length}). First error: ${failures[0]}`);\n}\n\nreturn out;\n"
+      },
+      "id": "e0e65f30-11e9-468c-9092-85875b4bbf28",
+      "name": "Collect Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        2336
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.defensxBaseUrl }}/customers/{{ $json.customerId }}/users",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "1000"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "31c941d2-7672-4abb-a7bf-a1fe292b7c58",
+      "name": "Get Users For Hit Customers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        2336
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "DefensX API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Config').first().json.defensxBaseUrl }}/customers/{{ $('Collect Results').all()[$itemIndex].json.customerId }}/agents",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true
+            }
+          }
+        }
+      },
+      "id": "9aa22685-c065-4a3e-9351-a79952580e58",
+      "name": "Get Agents For Hit Customers",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2384,
+        2336
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "DefensX API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Resets the SuperOps client accumulator and starts paging at page 1.\nconst sd = $getWorkflowStaticData('global');\nsd.soClients = [];\nsd.soPage = 1;\nreturn [{ json: { page: 1 } }];\n"
+      },
+      "id": "ef37fac5-4332-4747-b7d8-1a354da648ca",
+      "name": "Init Client Paging",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2592,
+        2336
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.superops.ai/msp",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CustomerSubDomain",
+              "value": "={{ $('Config').first().json.superopsSubdomain }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'query getClientList($input: ListInfoInput!) { getClientList(input: $input) { clients { accountId name } listInfo { totalCount } } }', variables: { input: { page: $json.page, pageSize: 100 } } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 700
+            }
+          }
+        }
+      },
+      "id": "23ba0a41-8708-490f-8bc9-42208aa35637",
+      "name": "Get SuperOps Clients Page",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2816,
+        2336
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "SuperOps API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Appends this page of SuperOps clients and decides whether another page is needed.\nconst sd = $getWorkflowStaticData('global');\nconst page = Number(sd.soPage) || 1;\nconst res = $input.first().json || {};\n\nif (res.error || res.errors) {\n  throw new Error('SuperOps getClientList failed: ' + JSON.stringify(res.error || res.errors).slice(0, 500));\n}\nconst payload = res.data && res.data.getClientList;\nif (!payload) {\n  throw new Error('SuperOps getClientList returned no data (silent null). Check rate limiting and the CustomerSubDomain header.');\n}\n\nconst batch = (payload.clients || []).map(c => ({ accountId: c.accountId, name: c.name }));\nconst all = [...(sd.soClients || []), ...batch];\nconst total = Number(payload.listInfo && payload.listInfo.totalCount) || 0;\nconst hasMore = batch.length > 0 && all.length < total && page < 50;\n\nsd.soClients = all;\nsd.soPage = page + 1;\n\nreturn [{ json: { page: page + 1, hasMore, loaded: all.length, total } }];\n"
+      },
+      "id": "379fd643-7629-4caa-be13-6dadf546798d",
+      "name": "Accumulate SuperOps Clients",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3040,
+        2336
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "5e71177a-a437-4bc6-9251-27572e9aca1b",
+              "leftValue": "={{ $json.hasMore }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "bce7be2d-2f8e-47f2-a809-7f851046e989",
+      "name": "More Client Pages?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        3264,
+        2336
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// One SuperOps ticket per DefensX customer with new hits. Maps the DefensX customer to a\n// SuperOps client by normalised name (Config.customerNameMap overrides), resolves user and\n// device names, and builds the ticket subject/description.\nconst cfg = $('Config').first().json;\nconst ctx = $('Build Run Context').first().json;\nconst sd = $getWorkflowStaticData('global');\nconst clients = sd.soClients || [];\nsd.soClients = [];   // do not persist the client list between runs\nsd.soPage = 1;\n\nconst results = $('Collect Results').all().map(i => i.json);\nconst userResponses = $('Get Users For Hit Customers').all().map(i => i.json);\nconst agentResponses = $('Get Agents For Hit Customers').all().map(i => i.json);\n\nconst TZ = 'America/Los_Angeles';\nconst defang = cfg.defangUrls !== false;\n\nconst norm = s => String(s ?? '')\n  .toLowerCase()\n  .replace(/&/g, ' and ')\n  .replace(/[^a-z0-9 ]+/g, ' ')\n  .replace(/\\b(inc|incorporated|llc|llp|pllc|ltd|corp|corporation|co|company|pc)\\b/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst safeUrl = s => defang ? String(s ?? '').replace(/\\./g, '[.]') : String(s ?? '');\nconst fmt = t => {\n  const d = new Date(t);\n  return isNaN(d) ? String(t ?? '') : d.toLocaleString('en-US', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' });\n};\n\nlet nameMap = {};\ntry {\n  nameMap = typeof cfg.customerNameMap === 'string' ? JSON.parse(cfg.customerNameMap || '{}') : (cfg.customerNameMap || {});\n} catch (e) {\n  throw new Error('Config.customerNameMap is not valid JSON: ' + e.message);\n}\nconst overrides = new Map(Object.entries(nameMap).map(([k, v]) => [norm(k), norm(v)]));\n\nconst byName = new Map();\nfor (const c of clients) {\n  const k = norm(c.name);\n  if (!k) continue;\n  byName.set(k, byName.has(k) ? null : c); // null = ambiguous, treated as unmapped\n}\n\nconst out = [];\nconst unmapped = [];\n\nresults.forEach((r, i) => {\n  const users = new Map(((userResponses[i] || {}).items || []).map(u => [u.id, u]));\n  const agentBody = (agentResponses[i] || {}).body;\n  const agents = new Map((Array.isArray(agentBody) ? agentBody : []).map(a => [a.id, a]));\n\n  const wanted = overrides.get(norm(r.customerName)) || norm(r.customerName);\n  const client = byName.get(wanted) || null;\n  const accountId = client ? client.accountId : (cfg.fallbackSuperOpsAccountId || '');\n  if (!client) unmapped.push(r.customerName);\n  if (!accountId) return;\n\n  const hits = [...r.hits].sort((a, b) => String(b.lastSeen).localeCompare(String(a.lastSeen)));\n  const rowsHtml = hits.map(h => {\n    const u = users.get(h.userId);\n    const a = agents.get(h.agentId);\n    const who = u ? (u.email || u.username || u.name || h.userId) : (h.userId || 'unknown');\n    return '<tr>' + [\n      esc(fmt(h.lastSeen)),\n      esc(who),\n      esc(a ? a.hostname : (h.agentId || '')),\n      esc(safeUrl(h.sampleUrl)),\n      esc(h.count),\n      esc(h.sources.join('+') + (h.consented ? ' (user consented past block)' : '')),\n      esc(h.categoryKey || ''),\n    ].map(c => `<td>${c}</td>`).join('') + '</tr>';\n  }).join('');\n\n  const total = hits.reduce((n, h) => n + h.count, 0);\n  const userCount = new Set(hits.map(h => h.userId || 'unknown')).size;\n  const subject = `DefensX: ${hits.length} blocked site${hits.length === 1 ? '' : 's'} from \"${ctx.groupName}\" - ${r.customerName}` +\n    (client ? '' : ' [UNMAPPED CLIENT]');\n\n  const description =\n    `<p>DefensX blocked ${total} request${total === 1 ? '' : 's'} to ${hits.length} site${hits.length === 1 ? '' : 's'} ` +\n    `in URL group <b>${esc(ctx.groupName)}</b> for <b>${esc(r.customerName)}</b> (${userCount} user${userCount === 1 ? '' : 's'}).</p>` +\n    `<p>Window: ${esc(fmt(r.startIso))} to ${esc(fmt(r.endIso))} Pacific.</p>` +\n    (client ? '' : `<p><b>No SuperOps client matched \"${esc(r.customerName)}\".</b> Filed under the fallback client; add a mapping in the workflow's Config.customerNameMap.</p>`) +\n    '<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\"><tr>' +\n    ['Last seen', 'User', 'Device', 'Site', 'Blocks', 'Source', 'Category'].map(h => `<th>${h}</th>`).join('') +\n    '</tr>' + rowsHtml + '</table>' +\n    (defang ? '<p>URLs are defanged ([.]) and query strings removed.</p>' : '<p>Query strings removed.</p>');\n\n  out.push({\n    json: {\n      customerId: r.customerId,\n      customerName: r.customerName,\n      endIso: r.endIso,\n      mapped: !!client,\n      superOpsClientName: client ? client.name : null,\n      hitKeys: hits.map(h => `${r.customerId}|${h.userId || 'unknown'}|${h.hostname}`),\n      ticketInput: {\n        subject,\n        description,\n        source: 'FORM',\n        requestType: cfg.ticketRequestType, // must be one of YOUR tenant's ticket type names\n        client: { accountId },\n      },\n    },\n  });\n});\n\nif (unmapped.length > 0 && !cfg.fallbackSuperOpsAccountId) {\n  throw new Error(\n    `No SuperOps client matched DefensX customer(s): ${unmapped.join(', ')}. ` +\n    'Set Config.fallbackSuperOpsAccountId or add them to Config.customerNameMap. Nothing was marked as notified, so these hits will be retried.'\n  );\n}\n\nreturn out;\n"
+      },
+      "id": "97c8c5af-661e-4823-a206-f8545fa0dd17",
+      "name": "Build Tickets",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1936,
+        2656
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.superops.ai/msp",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CustomerSubDomain",
+              "value": "={{ $('Config').first().json.superopsSubdomain }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'mutation createTicket($input: CreateTicketInput!) { createTicket(input: $input) { ticketId displayId subject } }', variables: { input: $json.ticketInput } }) }}",
+        "options": {
+          "batching": {
+            "batch": {
+              "batchSize": 1,
+              "batchInterval": 700
+            }
+          }
+        }
+      },
+      "id": "9d5e4ce7-e89c-40ba-94e3-20b6a464b35a",
+      "name": "Create SuperOps Ticket",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2160,
+        2656
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "SuperOps API"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Marks user+hostname pairs as notified and advances the customer's cursor, but only\n// for tickets SuperOps actually created. Failed tickets are retried on the next run.\nconst sd = $getWorkflowStaticData('global');\nconst cursors = { ...(sd.cursors || {}) };\nconst notified = { ...(sd.notified || {}) };\nconst tickets = $('Build Tickets').all().map(i => i.json);\nconst now = Date.now();\n\nconst out = [];\n\n$input.all().forEach((item, i) => {\n  const res = item.json || {};\n  const t = tickets[i];\n  if (!t) return;\n  const created = res.data && res.data.createTicket;\n\n  if (created && created.ticketId) {\n    for (const k of t.hitKeys) notified[k] = now;\n    cursors[t.customerId] = t.endIso;\n    out.push({ json: { customerName: t.customerName, status: 'created', ticketId: created.ticketId, displayId: created.displayId ?? null, hits: t.hitKeys.length } });\n  } else {\n    const reason = JSON.stringify(res.errors || res.error || res).slice(0, 500);\n    out.push({ json: { customerName: t.customerName, status: 'failed', reason } });\n  }\n});\n\nsd.cursors = cursors;\nsd.notified = notified;\n\n// No throw here: state written in this node must be kept. The next node raises the failure.\nreturn out;\n"
+      },
+      "id": "ac9974dc-1c16-4c77-afac-29b02b6c4c33",
+      "name": "Record Notified",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2384,
+        2656
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Fails the execution (so the error workflow fires) if SuperOps rejected any ticket.\n// Kept separate from Record Notified so that node's saved state is never discarded.\nconst failed = $input.all().map(i => i.json).filter(r => r.status === 'failed');\nif (failed.length > 0) {\n  throw new Error(\n    `SuperOps ticket creation failed for ${failed.length} customer(s): ` +\n    failed.map(f => `${f.customerName}: ${f.reason}`).join(' | ')\n  );\n}\nreturn $input.all();\n"
+      },
+      "id": "182320fc-6e73-4f89-b5cb-825efe0df06c",
+      "name": "Fail If Any Ticket Failed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2592,
+        2656
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.superops.ai/msp",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBearerAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "CustomerSubDomain",
+              "value": "CHANGE_ME"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ query: 'query { __type(name: \"CreateTicketInput\") { name inputFields { name type { kind name ofType { kind name ofType { kind name ofType { kind name } } } } } } }' }) }}",
+        "options": {}
+      },
+      "id": "78815eb8-3726-47da-9a89-223a7079d7d8",
+      "name": "DIAG Introspect CreateTicketInput",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3040,
+        2656
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "httpBearerAuth": {
+          "id": "REPLACE_ME",
+          "name": "SuperOps API"
+        }
+      },
+      "notes": "Not connected on purpose. Set the CustomerSubDomain header, then run it on its own (\"Execute step\") to list the CreateTicketInput fields for your tenant."
+    },
+    {
+      "parameters": {
+        "content": "## DefensX URL group block alerts\n1. Attach credentials (type **Bearer Auth**): your DefensX Partner API key on the 8 DefensX nodes, your SuperOps API token on the 3 SuperOps nodes.\n2. **Config**: set `urlGroupName`, `superopsSubdomain`, `ticketRequestType` and `fallbackSuperOpsAccountId`.\n3. Set the `CustomerSubDomain` header on **DIAG Introspect CreateTicketInput** and run it once to check the ticket fields for your tenant.\n4. Test with **Manual Test**, then activate.\n\nCursors and the user+site suppression list live in workflow static data, which only persists on *active* (scheduled) runs. Manual runs always look back `firstRunLookbackMinutes` and can re-ticket the same hit.",
+        "height": 300,
+        "width": 520
+      },
+      "id": "d1b987ff-512f-4948-ba0d-330356cd4406",
+      "name": "Setup Notes",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        3472,
+        2592
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Every 5 Minutes": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Manual Test": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Get Partner Self Customer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Partner Self Customer": {
+      "main": [
+        [
+          {
+            "node": "Get URL Groups",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get URL Groups": {
+      "main": [
+        [
+          {
+            "node": "Resolve URL Group",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve URL Group": {
+      "main": [
+        [
+          {
+            "node": "Get Group URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Group URLs": {
+      "main": [
+        [
+          {
+            "node": "Build Run Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Run Context": {
+      "main": [
+        [
+          {
+            "node": "Get Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Customers": {
+      "main": [
+        [
+          {
+            "node": "Build Customer List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Customer List": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Over Customers": {
+      "main": [
+        [
+          {
+            "node": "Collect Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get URL Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get URL Logs": {
+      "main": [
+        [
+          {
+            "node": "Collect URL Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect URL Logs": {
+      "main": [
+        [
+          {
+            "node": "Get DNS Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get DNS Logs": {
+      "main": [
+        [
+          {
+            "node": "Match Blocked Hits",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Match Blocked Hits": {
+      "main": [
+        [
+          {
+            "node": "Loop Over Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Results": {
+      "main": [
+        [
+          {
+            "node": "Get Users For Hit Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Users For Hit Customers": {
+      "main": [
+        [
+          {
+            "node": "Get Agents For Hit Customers",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Agents For Hit Customers": {
+      "main": [
+        [
+          {
+            "node": "Init Client Paging",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init Client Paging": {
+      "main": [
+        [
+          {
+            "node": "Get SuperOps Clients Page",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get SuperOps Clients Page": {
+      "main": [
+        [
+          {
+            "node": "Accumulate SuperOps Clients",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Accumulate SuperOps Clients": {
+      "main": [
+        [
+          {
+            "node": "More Client Pages?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "More Client Pages?": {
+      "main": [
+        [
+          {
+            "node": "Get SuperOps Clients Page",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Tickets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Tickets": {
+      "main": [
+        [
+          {
+            "node": "Create SuperOps Ticket",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create SuperOps Ticket": {
+      "main": [
+        [
+          {
+            "node": "Record Notified",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Record Notified": {
+      "main": [
+        [
+          {
+            "node": "Fail If Any Ticket Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
