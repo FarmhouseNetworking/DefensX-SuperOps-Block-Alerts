@@ -10,7 +10,7 @@ It is built for a global block list, such as a list of known malware domains, wh
  URL group entries   --->  build matchers
  URL logs (browser)  --->  per customer:  keep blocked rows that match the group
  DNS logs (agent)    --->                 roll up to one hit per user + site
- users, agents       --->  resolve names  drop hits already ticketed (24 h)   --->  createTicket
+ agents + children   --->  device names   drop hits already ticketed (24 h)   --->  createTicket
                                                                                     (one per client per run)
 ```
 
@@ -28,10 +28,11 @@ It is built for a global block list, such as a list of known malware domains, wh
 4. Keeps only blocked requests whose host or URL is in the group. Exact hostnames, `*.domain.com` wildcards and full URLs with a path are all supported.
 5. Rolls the matches up to one hit per user and site, with a count and first/last seen times.
 6. Drops any user and site pair that was already ticketed in the last 24 hours.
-7. Matches the DefensX customer to a SuperOps client by name and creates **one ticket per client per run**.
-8. Records what was ticketed, so the next run does not repeat it.
+7. Looks up the device name for each hit.
+8. Matches the DefensX customer to a SuperOps client by name and creates **one ticket per client per run**.
+9. Records what was ticketed, so the next run does not repeat it.
 
-Each ticket contains a table with the time, user, device, site, number of blocks, source (browser or agent) and category. Sites are written as `example[.]com` so nobody clicks one by accident, and query strings are removed so session tokens never end up in a ticket.
+Each ticket contains a table with the time, user ID, device, site, number of blocks, source (browser or agent) and category. Sites are written as `example[.]com` so nobody clicks one by accident, and query strings are removed so session tokens never end up in a ticket.
 
 DefensX has no webhook for blocks, and its logs do not record which URL group caused a block. That is why the workflow polls and does the matching itself. A hit therefore means "blocked, and the site is in the group".
 
@@ -61,7 +62,7 @@ Keys belong in n8n credentials only. Do not paste them into the workflow.
 
 1. In n8n, create a new workflow and choose **Import from File**.
 2. Select `defensx-url-group-block-alerts.json`.
-3. Attach the **DefensX API** credential to the 8 DefensX HTTP Request nodes and the **SuperOps API** credential to the 3 SuperOps nodes. n8n marks each node that is missing one.
+3. Attach the **DefensX API** credential to the 7 DefensX HTTP Request nodes and the **SuperOps API** credential to the 3 SuperOps nodes. n8n marks each node that is missing one.
 
 ## Step 3: Fill in the Config node
 
@@ -72,7 +73,7 @@ Everything you need to change is in the **Config** node at the start of the work
 | `urlGroupName` | `CHANGE_ME` | Exact name of the DefensX URL group to watch. Not case-sensitive. |
 | `superopsSubdomain` | `CHANGE_ME` | Your SuperOps subdomain, sent as the `CustomerSubDomain` header. |
 | `ticketRequestType` | `CHANGE_ME` | One of **your** SuperOps ticket type names, spelled exactly as SuperOps shows it. See [Lessons learned](#lessons-learned). |
-| `fallbackSuperOpsAccountId` | empty | SuperOps `accountId` of the client that receives a ticket when a DefensX customer name has no match. If this is empty and a customer does not match, the run stops with an error and creates no tickets. |
+| `fallbackSuperOpsAccountId` | empty | SuperOps `accountId` of the client that receives a ticket when a DefensX customer name has no match. If this is empty and a customer does not match, the run stops with an error and creates no tickets. Keep the type as **String**: SuperOps account IDs are too large for a number and would be rounded. |
 | `customerNameMap` | `{}` | JSON for customers named differently in the two systems, for example `{"Acme": "Acme Holdings Inc"}`. |
 | `groupOwnerCustomerId` | empty | Leave empty when the group lives on your partner account. Otherwise the ID of the customer that owns it. |
 | `suppressHours` | `24` | How long the same user and site stay quiet after a ticket is created. |
@@ -99,6 +100,12 @@ Ticket times are shown in US Pacific time. To change that, edit the `TZ` constan
 
 ---
 
+## Users and devices in the ticket
+
+- **User ID:** the ticket shows the DefensX user ID exactly as the log records it. The workflow does not look up user names. To find the person, start from the device.
+- **Device:** the hostname comes from `/customers/{id}/agents_with_children`. Browser logs carry the ID of a per-user child agent, so the workflow matches both device IDs and child agent IDs to the device's hostname.
+- If a log row has no user, the ticket shows the user ID of the device's child agent, or `No user recorded`.
+
 ## How customers are matched to SuperOps clients
 
 Names are compared after lower-casing, removing punctuation and dropping suffixes such as Inc, LLC and Ltd. So `Acme, Inc.` matches `ACME Inc`.
@@ -123,7 +130,10 @@ Names are compared after lower-casing, removing punctuation and dropping suffixe
    ```
 
 7. **A token that can create tickets may not be able to read them.** With our token, the ticket list returned a total count and no rows once ticket type fields were selected, and single-ticket lookups returned `forbidden`. Do not plan on reading existing tickets to discover valid values.
-8. **Keep state writes and failures in separate nodes.** **Record Notified** saves what was ticketed and never throws. **Fail If Any Ticket Failed** raises the error afterwards. The record of created tickets is written before the run is marked as failed, so one rejected ticket does not cause the others to be sent again.
+8. **Browser logs carry a child agent ID, not the device's agent ID.** `/agents` lists devices only, so a browser hit never matched and the ticket showed a raw ID. `/agents_with_children` returns each device with its per-user child agents, and matching on both fixed it.
+9. **We could not turn user IDs into names.** In our tenant, the user IDs on these log rows were not in the response from `/customers/{id}/users`. We did not find out why. The ticket shows the ID, and the device name identifies the machine.
+10. **SuperOps account IDs do not fit in a JavaScript number.** A 19-digit ID stored as a number is silently rounded to a different value. Keep account IDs as strings everywhere.
+11. **Keep state writes and failures in separate nodes.** **Record Notified** saves what was ticketed and never throws. **Fail If Any Ticket Failed** raises the error afterwards. The record of created tickets is written before the run is marked as failed, so one rejected ticket does not cause the others to be sent again.
 
 ---
 
@@ -137,6 +147,7 @@ Names are compared after lower-casing, removing punctuation and dropping suffixe
 | `mandatory_validation_failed` on `requestType` | `ticketRequestType` is empty. |
 | `referred_value_does_not_exist` on `ticketType` | `ticketRequestType` is not one of your tenant's ticket type names. Copy the name from SuperOps exactly. |
 | `No SuperOps client matched DefensX customer(s)` | Set `fallbackSuperOpsAccountId` or add the customer to `customerNameMap`. No tickets are created until this is fixed, and the hits are retried. |
+| The Device column says `Not found in DefensX agent list (ID ...)` | The agent lookup failed or the agent has been removed from DefensX. Open **Build Tickets** in that execution and read the `lookup` object on the item. |
 | `DefensX URL log fetch failed for every customer` | The DefensX key or base URL is wrong, or the API is unreachable. |
 | Duplicate tickets for the same hit | Usually manual test runs. It can also happen if one run takes longer than the schedule interval and two runs overlap. |
 
@@ -145,7 +156,7 @@ Names are compared after lower-casing, removing punctuation and dropping suffixe
 ## Security notes
 
 - API keys are stored only in n8n credentials. The workflow file contains none.
-- Tickets include user names, device names and blocked sites. Treat them as client data.
+- Tickets include user IDs, device names and blocked sites. Treat them as client data.
 - Query strings and fragments are removed from URLs before they are stored or written to a ticket.
 - The workflow only reads from DefensX, and in SuperOps it only lists clients and creates tickets. Scope both keys to that.
 

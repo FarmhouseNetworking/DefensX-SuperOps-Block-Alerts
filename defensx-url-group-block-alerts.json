@@ -443,42 +443,7 @@
     },
     {
       "parameters": {
-        "url": "={{ $('Config').first().json.defensxBaseUrl }}/customers/{{ $json.customerId }}/users",
-        "authentication": "genericCredentialType",
-        "genericAuthType": "httpBearerAuth",
-        "sendQuery": true,
-        "queryParameters": {
-          "parameters": [
-            {
-              "name": "limit",
-              "value": "1000"
-            }
-          ]
-        },
-        "options": {}
-      },
-      "id": "31c941d2-7672-4abb-a7bf-a1fe292b7c58",
-      "name": "Get Users For Hit Customers",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        2160,
-        2336
-      ],
-      "retryOnFail": true,
-      "maxTries": 3,
-      "waitBetweenTries": 2000,
-      "credentials": {
-        "httpBearerAuth": {
-          "id": "REPLACE_ME",
-          "name": "DefensX API"
-        }
-      },
-      "onError": "continueRegularOutput"
-    },
-    {
-      "parameters": {
-        "url": "={{ $('Config').first().json.defensxBaseUrl }}/customers/{{ $('Collect Results').all()[$itemIndex].json.customerId }}/agents",
+        "url": "={{ $('Config').first().json.defensxBaseUrl }}/customers/{{ $json.customerId }}/agents_with_children",
         "authentication": "genericCredentialType",
         "genericAuthType": "httpBearerAuth",
         "options": {
@@ -615,7 +580,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// One SuperOps ticket per DefensX customer with new hits. Maps the DefensX customer to a\n// SuperOps client by normalised name (Config.customerNameMap overrides), resolves user and\n// device names, and builds the ticket subject/description.\nconst cfg = $('Config').first().json;\nconst ctx = $('Build Run Context').first().json;\nconst sd = $getWorkflowStaticData('global');\nconst clients = sd.soClients || [];\nsd.soClients = [];   // do not persist the client list between runs\nsd.soPage = 1;\n\nconst results = $('Collect Results').all().map(i => i.json);\nconst userResponses = $('Get Users For Hit Customers').all().map(i => i.json);\nconst agentResponses = $('Get Agents For Hit Customers').all().map(i => i.json);\n\nconst TZ = 'America/Los_Angeles';\nconst defang = cfg.defangUrls !== false;\n\nconst norm = s => String(s ?? '')\n  .toLowerCase()\n  .replace(/&/g, ' and ')\n  .replace(/[^a-z0-9 ]+/g, ' ')\n  .replace(/\\b(inc|incorporated|llc|llp|pllc|ltd|corp|corporation|co|company|pc)\\b/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst safeUrl = s => defang ? String(s ?? '').replace(/\\./g, '[.]') : String(s ?? '');\nconst fmt = t => {\n  const d = new Date(t);\n  return isNaN(d) ? String(t ?? '') : d.toLocaleString('en-US', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' });\n};\n\nlet nameMap = {};\ntry {\n  nameMap = typeof cfg.customerNameMap === 'string' ? JSON.parse(cfg.customerNameMap || '{}') : (cfg.customerNameMap || {});\n} catch (e) {\n  throw new Error('Config.customerNameMap is not valid JSON: ' + e.message);\n}\nconst overrides = new Map(Object.entries(nameMap).map(([k, v]) => [norm(k), norm(v)]));\n\nconst byName = new Map();\nfor (const c of clients) {\n  const k = norm(c.name);\n  if (!k) continue;\n  byName.set(k, byName.has(k) ? null : c); // null = ambiguous, treated as unmapped\n}\n\nconst out = [];\nconst unmapped = [];\n\nresults.forEach((r, i) => {\n  const users = new Map(((userResponses[i] || {}).items || []).map(u => [u.id, u]));\n  const agentBody = (agentResponses[i] || {}).body;\n  const agents = new Map((Array.isArray(agentBody) ? agentBody : []).map(a => [a.id, a]));\n\n  const wanted = overrides.get(norm(r.customerName)) || norm(r.customerName);\n  const client = byName.get(wanted) || null;\n  const accountId = client ? client.accountId : (cfg.fallbackSuperOpsAccountId || '');\n  if (!client) unmapped.push(r.customerName);\n  if (!accountId) return;\n\n  const hits = [...r.hits].sort((a, b) => String(b.lastSeen).localeCompare(String(a.lastSeen)));\n  const rowsHtml = hits.map(h => {\n    const u = users.get(h.userId);\n    const a = agents.get(h.agentId);\n    const who = u ? (u.email || u.username || u.name || h.userId) : (h.userId || 'unknown');\n    return '<tr>' + [\n      esc(fmt(h.lastSeen)),\n      esc(who),\n      esc(a ? a.hostname : (h.agentId || '')),\n      esc(safeUrl(h.sampleUrl)),\n      esc(h.count),\n      esc(h.sources.join('+') + (h.consented ? ' (user consented past block)' : '')),\n      esc(h.categoryKey || ''),\n    ].map(c => `<td>${c}</td>`).join('') + '</tr>';\n  }).join('');\n\n  const total = hits.reduce((n, h) => n + h.count, 0);\n  const userCount = new Set(hits.map(h => h.userId || 'unknown')).size;\n  const subject = `DefensX: ${hits.length} blocked site${hits.length === 1 ? '' : 's'} from \"${ctx.groupName}\" - ${r.customerName}` +\n    (client ? '' : ' [UNMAPPED CLIENT]');\n\n  const description =\n    `<p>DefensX blocked ${total} request${total === 1 ? '' : 's'} to ${hits.length} site${hits.length === 1 ? '' : 's'} ` +\n    `in URL group <b>${esc(ctx.groupName)}</b> for <b>${esc(r.customerName)}</b> (${userCount} user${userCount === 1 ? '' : 's'}).</p>` +\n    `<p>Window: ${esc(fmt(r.startIso))} to ${esc(fmt(r.endIso))} Pacific.</p>` +\n    (client ? '' : `<p><b>No SuperOps client matched \"${esc(r.customerName)}\".</b> Filed under the fallback client; add a mapping in the workflow's Config.customerNameMap.</p>`) +\n    '<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\"><tr>' +\n    ['Last seen', 'User', 'Device', 'Site', 'Blocks', 'Source', 'Category'].map(h => `<th>${h}</th>`).join('') +\n    '</tr>' + rowsHtml + '</table>' +\n    (defang ? '<p>URLs are defanged ([.]) and query strings removed.</p>' : '<p>Query strings removed.</p>');\n\n  out.push({\n    json: {\n      customerId: r.customerId,\n      customerName: r.customerName,\n      endIso: r.endIso,\n      mapped: !!client,\n      superOpsClientName: client ? client.name : null,\n      hitKeys: hits.map(h => `${r.customerId}|${h.userId || 'unknown'}|${h.hostname}`),\n      ticketInput: {\n        subject,\n        description,\n        source: 'FORM',\n        requestType: cfg.ticketRequestType, // must be one of YOUR tenant's ticket type names\n        client: { accountId },\n      },\n    },\n  });\n});\n\nif (unmapped.length > 0 && !cfg.fallbackSuperOpsAccountId) {\n  throw new Error(\n    `No SuperOps client matched DefensX customer(s): ${unmapped.join(', ')}. ` +\n    'Set Config.fallbackSuperOpsAccountId or add them to Config.customerNameMap. Nothing was marked as notified, so these hits will be retried.'\n  );\n}\n\nreturn out;\n"
+        "jsCode": "// One SuperOps ticket per DefensX customer with new hits. Maps the DefensX customer to a\n// SuperOps client by normalised name (Config.customerNameMap overrides), resolves user and\n// device names, and builds the ticket subject/description.\n// Build Tickets v4: the User column shows the DefensX user ID as logged. There is no user-name\n// lookup. Device names come from agents_with_children, because browser logs carry a per-user\n// child agent ID.\nconst cfg = $('Config').first().json;\nconst ctx = $('Build Run Context').first().json;\nconst sd = $getWorkflowStaticData('global');\nconst clients = sd.soClients || [];\nsd.soClients = [];   // do not persist the client list between runs\nsd.soPage = 1;\n\nconst results = $('Collect Results').all().map(i => i.json);\nconst agentResponses = $('Get Agents For Hit Customers').all().map(i => i.json);\n\nconst TZ = 'America/Los_Angeles';\nconst defang = cfg.defangUrls !== false;\n\nconst norm = s => String(s ?? '')\n  .toLowerCase()\n  .replace(/&/g, ' and ')\n  .replace(/[^a-z0-9 ]+/g, ' ')\n  .replace(/\\b(inc|incorporated|llc|llp|pllc|ltd|corp|corporation|co|company|pc)\\b/g, ' ')\n  .replace(/\\s+/g, ' ')\n  .trim();\n\nconst esc = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\"/g, '&quot;');\nconst safeUrl = s => defang ? String(s ?? '').replace(/\\./g, '[.]') : String(s ?? '');\nconst fmt = t => {\n  const d = new Date(t);\n  return isNaN(d) ? String(t ?? '') : d.toLocaleString('en-US', { timeZone: TZ, dateStyle: 'short', timeStyle: 'short' });\n};\n\nlet nameMap = {};\ntry {\n  nameMap = typeof cfg.customerNameMap === 'string' ? JSON.parse(cfg.customerNameMap || '{}') : (cfg.customerNameMap || {});\n} catch (e) {\n  throw new Error('Config.customerNameMap is not valid JSON: ' + e.message);\n}\nconst overrides = new Map(Object.entries(nameMap).map(([k, v]) => [norm(k), norm(v)]));\n\nconst byName = new Map();\nfor (const c of clients) {\n  const k = norm(c.name);\n  if (!k) continue;\n  byName.set(k, byName.has(k) ? null : c); // null = ambiguous, treated as unmapped\n}\n\n// IDs are UUIDs, unique across customers, so one lookup table covers every customer in this run.\nconst lc = v => String(v ?? '').toLowerCase();\nconst rowsOf = r => {\n  if (!r || r.error) return [];\n  const b = r.body !== undefined ? r.body : r;\n  if (Array.isArray(b)) return b;\n  if (b && Array.isArray(b.items)) return b.items;\n  return b && b.id ? [b] : [];\n};\n\n// Logs from the browser carry the ID of a per-user child agent, not the device's own agent ID.\n// Index both so either one resolves to the device hostname.\nconst devices = new Map();\nlet childAgents = 0;\nfor (const r of agentResponses) {\n  for (const a of rowsOf(r)) {\n    if (!a || !a.id) continue;\n    devices.set(lc(a.id), { hostname: a.hostname, userId: null });\n    for (const c of a.children || []) {\n      if (!c || !c.id) continue;\n      devices.set(lc(c.id), { hostname: a.hostname, userId: c.user_id ?? null });\n      childAgents++;\n    }\n  }\n}\n\nconst out = [];\nconst unmapped = [];\n\nresults.forEach(r => {\n  const unresolvedAgentIds = new Set();\n\n  const wanted = overrides.get(norm(r.customerName)) || norm(r.customerName);\n  const client = byName.get(wanted) || null;\n  const accountId = client ? client.accountId : (cfg.fallbackSuperOpsAccountId || '');\n  if (!client) unmapped.push(r.customerName);\n  if (!accountId) return;\n\n  const hits = [...r.hits].sort((a, b) => String(b.lastSeen).localeCompare(String(a.lastSeen)));\n  const rowsHtml = hits.map(h => {\n    const d = devices.get(lc(h.agentId));\n    if (!(d && d.hostname) && h.agentId) unresolvedAgentIds.add(h.agentId);\n    // The user ID from the log row; if the row named no user, the child agent's user ID.\n    const who = h.userId || (d && d.userId) || 'No user recorded';\n    const device = d && d.hostname\n      ? d.hostname\n      : (h.agentId ? `Not found in DefensX agent list (ID ${h.agentId})` : 'No device recorded');\n    return '<tr>' + [\n      esc(fmt(h.lastSeen)),\n      esc(who),\n      esc(device),\n      esc(safeUrl(h.sampleUrl)),\n      esc(h.count),\n      esc(h.sources.join('+') + (h.consented ? ' (user consented past block)' : '')),\n      esc(h.categoryKey || ''),\n    ].map(c => `<td>${c}</td>`).join('') + '</tr>';\n  }).join('');\n\n  const total = hits.reduce((n, h) => n + h.count, 0);\n  const userCount = new Set(hits.map(h => h.userId || 'unknown')).size;\n  const subject = `DefensX: ${hits.length} blocked site${hits.length === 1 ? '' : 's'} from \"${ctx.groupName}\" - ${r.customerName}` +\n    (client ? '' : ' [UNMAPPED CLIENT]');\n\n  const description =\n    `<p>DefensX blocked ${total} request${total === 1 ? '' : 's'} to ${hits.length} site${hits.length === 1 ? '' : 's'} ` +\n    `in URL group <b>${esc(ctx.groupName)}</b> for <b>${esc(r.customerName)}</b> (${userCount} user${userCount === 1 ? '' : 's'}).</p>` +\n    `<p>Window: ${esc(fmt(r.startIso))} to ${esc(fmt(r.endIso))} Pacific.</p>` +\n    (client ? '' : `<p><b>No SuperOps client matched \"${esc(r.customerName)}\".</b> Filed under the fallback client; add a mapping in the workflow's Config.customerNameMap.</p>`) +\n    '<table border=\"1\" cellpadding=\"4\" cellspacing=\"0\"><tr>' +\n    ['Last seen', 'User ID', 'Device', 'Site', 'Blocks', 'Source', 'Category'].map(h => `<th>${h}</th>`).join('') +\n    '</tr>' + rowsHtml + '</table>' +\n    (defang ? '<p>URLs are defanged ([.]) and query strings removed.</p>' : '<p>Query strings removed.</p>');\n\n  out.push({\n    json: {\n      customerId: r.customerId,\n      customerName: r.customerName,\n      endIso: r.endIso,\n      mapped: !!client,\n      superOpsClientName: client ? client.name : null,\n      hitKeys: hits.map(h => `${r.customerId}|${h.userId || 'unknown'}|${h.hostname}`),\n      lookup: {\n        devicesLoaded: devices.size - childAgents,\n        childAgentsLoaded: childAgents,\n        unresolvedAgentIds: [...unresolvedAgentIds],\n      },\n      ticketInput: {\n        subject,\n        description,\n        source: 'FORM',\n        requestType: cfg.ticketRequestType, // must be one of YOUR tenant's ticket type names\n        client: { accountId },\n      },\n    },\n  });\n});\n\nif (unmapped.length > 0 && !cfg.fallbackSuperOpsAccountId) {\n  throw new Error(\n    `No SuperOps client matched DefensX customer(s): ${unmapped.join(', ')}. ` +\n    'Set Config.fallbackSuperOpsAccountId or add them to Config.customerNameMap. Nothing was marked as notified, so these hits will be retried.'\n  );\n}\n\nreturn out;\n"
       },
       "id": "97c8c5af-661e-4823-a206-f8545fa0dd17",
       "name": "Build Tickets",
@@ -739,7 +704,7 @@
     },
     {
       "parameters": {
-        "content": "## DefensX URL group block alerts\n1. Attach credentials (type **Bearer Auth**): your DefensX Partner API key on the 8 DefensX nodes, your SuperOps API token on the 3 SuperOps nodes.\n2. **Config**: set `urlGroupName`, `superopsSubdomain`, `ticketRequestType` and `fallbackSuperOpsAccountId`.\n3. Set the `CustomerSubDomain` header on **DIAG Introspect CreateTicketInput** and run it once to check the ticket fields for your tenant.\n4. Test with **Manual Test**, then activate.\n\nCursors and the user+site suppression list live in workflow static data, which only persists on *active* (scheduled) runs. Manual runs always look back `firstRunLookbackMinutes` and can re-ticket the same hit.",
+        "content": "## DefensX URL group block alerts\n1. Attach credentials (type **Bearer Auth**): your DefensX Partner API key on the 7 DefensX nodes, your SuperOps API token on the 3 SuperOps nodes.\n2. **Config**: set `urlGroupName`, `superopsSubdomain`, `ticketRequestType` and `fallbackSuperOpsAccountId` (keep it a String).\n3. Set the `CustomerSubDomain` header on **DIAG Introspect CreateTicketInput** and run it once to check the ticket fields for your tenant.\n4. Test with **Manual Test**, then activate.\n\nTickets show the DefensX user ID as logged. Device names come from `agents_with_children`.\n\nCursors and the user+site suppression list live in workflow static data, which only persists on *active* (scheduled) runs. Manual runs always look back `firstRunLookbackMinutes` and can re-ticket the same hit.",
         "height": 300,
         "width": 520
       },
@@ -928,17 +893,6 @@
       ]
     },
     "Collect Results": {
-      "main": [
-        [
-          {
-            "node": "Get Users For Hit Customers",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get Users For Hit Customers": {
       "main": [
         [
           {
